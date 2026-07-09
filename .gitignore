@@ -22,3 +22,9 @@ venv.bak/
 .vscode/
 .idea/
 .DS_Store
+
+# Generated data files (reproducible, not versioned)
+scratch/*.csv
+
+# SimFin local data cache
+simfin_data/
