@@ -25,6 +25,7 @@ venv.bak/
 
 # Generated data files (reproducible, not versioned)
 scratch/*.csv
+data/daily_prices.csv
 
 # SimFin local data cache
 simfin_data/
