@@ -28,3 +28,6 @@ scratch/*.csv
 
 # SimFin local data cache
 simfin_data/
+
+# Local project instructions, not versioned
+CLAUDE.md
