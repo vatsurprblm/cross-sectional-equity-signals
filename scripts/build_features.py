@@ -38,6 +38,14 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # build_universe.py / pull_prices.py.
 UNIVERSE_TO_SIMFIN_TICKER = {'BRK.B': 'BRK-A'}
 
+# SimFin's "Shares (Basic)" for BRK-A is the A-share-equivalent total share
+# count, but our price series for BRK.B is the B-share price. Berkshire's
+# A/B conversion ratio has been fixed at 1:1500 since the 2010 stock split
+# (1 A-share = 1500 B-shares), so multiplying A-equivalent shares by the
+# B-share price understates market cap ~1500x. Convert the B-share price to
+# an A-equivalent price before computing market cap for this ticker only.
+SHARE_CLASS_PRICE_MULTIPLIER = {'BRK.B': 1500}
+
 # Point-in-time fundamentals lookups are capped at this many days stale to
 # avoid silently using ancient data for a ticker with a reporting gap.
 MAX_FUNDAMENTALS_STALENESS_DAYS = 500
@@ -161,7 +169,28 @@ def load_fundamentals():
     print(f"  Filtered income: {income_before - len(income)} bad Publish<Report rows dropped")
     print(f"  Filtered balance: {balance_before - len(balance)} bad Publish<Report rows dropped")
 
+    balance = fix_shares_units_bug(balance)
+
     return income, balance
+
+
+def fix_shares_units_bug(balance):
+    """SimFin data quality bug: a handful of quarterly rows report Shares
+    (Basic/Diluted) in millions instead of raw share count (e.g. AON's
+    2022-09-30 quarter shows 210.0 instead of ~210,000,000; MCD's last 4
+    available quarters show 715-718 instead of ~715-722 million). Detected
+    by comparing each row to that ticker's own historical median share
+    count — any row under 1% of its own median (only when that median is
+    itself large enough to be a real security, not a penny stock) is
+    assumed to be reported in millions and rescaled by 1e6."""
+    balance = balance.sort_values(['Ticker', 'Report Date']).copy()
+    for col in ['Shares (Basic)', 'Shares (Diluted)']:
+        median = balance.groupby('Ticker')[col].transform('median')
+        suspect = (balance[col] / median < 0.01) & balance[col].notna() & (median > 1_000_000)
+        if suspect.any():
+            print(f"  Fixed {suspect.sum()} rows with likely shares-in-millions units bug ({col})")
+            balance.loc[suspect, col] = balance.loc[suspect, col] * 1_000_000
+    return balance
 
 
 def compute_ttm_net_income(income):
@@ -286,7 +315,6 @@ def main():
     ttm_1y_ago = ttm_1y_ago.rename(columns={'ttm_net_income': 'ttm_net_income_1y_ago'})
 
     balance_events = balance.rename(columns={'Ticker': 'ticker'})
-    balance_events['Shares (Basic)'] = balance_events['Shares (Basic)']
     equity_now = asof_fundamentals(
         balance_events, base, 'Publish Date',
         ['Total Equity', 'Shares (Basic)'], lag_days=0,
@@ -307,7 +335,8 @@ def main():
     )
 
     print("\nComputing fundamental + combined features...")
-    base['market_cap'] = base['shares_basic'] * base['price_at_signal']
+    price_multiplier = base['ticker'].map(SHARE_CLASS_PRICE_MULTIPLIER).fillna(1)
+    base['market_cap'] = base['shares_basic'] * base['price_at_signal'] * price_multiplier
     base['log_market_cap'] = np.log(base['market_cap'])
     base['earnings_yield'] = base['ttm_net_income_now'] / base['market_cap']
     base['roe'] = np.where(base['book_equity'] > 0, base['ttm_net_income_now'] / base['book_equity'], np.nan)
