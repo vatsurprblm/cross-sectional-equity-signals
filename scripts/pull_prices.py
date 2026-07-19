@@ -4,6 +4,10 @@ Pull daily OHLCV price data for every ticker in the monthly universe.
 Date range starts a year before the universe window (2020-01) so that
 Step 3 has enough trailing history to compute 12-month momentum and other
 lookback features for the earliest universe months, not just from 2021.
+It ends a few trading days after the universe window's last month
+(2025-06) so Step 4's 2-day-execution-lag label can be computed for that
+last month too — without this buffer, the label's forward-return window
+would run past the end of the price data and come back all-NaN.
 
 Prices are split/dividend-adjusted (auto_adjust=True) so returns aren't
 distorted by artificial jumps at split/dividend events.
@@ -18,7 +22,7 @@ import yfinance as yf
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 START_DATE = '2019-01-01'
-END_DATE = '2025-06-30'
+END_DATE = '2025-07-10'
 
 # Yahoo Finance uses a hyphen for share-class tickers where the S&P/SimFin
 # source uses a dot (e.g. BRK.B). Only BRK.B appears in our universe file;
